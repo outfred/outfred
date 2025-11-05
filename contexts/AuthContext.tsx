@@ -27,6 +27,7 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined)
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<User | null>(null)
   const [loading, setLoading] = useState(true)
+  const [initError, setInitError] = useState<string | null>(null) // Add error boundary to prevent white screen
   const supabase = createClient()
 
   const convertSupabaseUser = (supabaseUser: SupabaseUser): User => {
@@ -41,14 +42,19 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   useEffect(() => {
     const checkAuth = async () => {
       try {
+        console.log("[v0] Checking authentication status...")
         const {
           data: { session },
         } = await supabase.auth.getSession()
+
+        console.log("[v0] Session check result:", session ? "User logged in" : "No session")
+
         if (session?.user) {
           setUser(convertSupabaseUser(session.user))
         }
       } catch (error) {
-        console.error("Auth check failed:", error)
+        console.error("[v0] Auth check failed:", error)
+        setInitError(error instanceof Error ? error.message : "Authentication initialization failed")
       } finally {
         setLoading(false)
       }
@@ -59,6 +65,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange((_event, session) => {
+      console.log("[v0] Auth state changed:", _event)
       if (session?.user) {
         setUser(convertSupabaseUser(session.user))
       } else {
@@ -73,7 +80,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const login = async (email: string, password: string) => {
     try {
-      console.log("🔐 Attempting Supabase login for:", email)
+      console.log("[v0] Attempting Supabase login for:", email)
 
       const { data, error } = await supabase.auth.signInWithPassword({
         email,
@@ -81,7 +88,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       })
 
       if (error) {
-        console.error("❌ Supabase login error:", error)
+        console.error("[v0] Supabase login error:", error)
         throw new Error(error.message)
       }
 
@@ -89,10 +96,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         throw new Error("No user data received")
       }
 
-      console.log("✅ User logged in via Supabase:", data.user.email)
+      console.log("[v0] User logged in via Supabase:", data.user.email)
       setUser(convertSupabaseUser(data.user))
     } catch (error: any) {
-      console.error("❌ Login failed:", error)
+      console.error("[v0] Login failed:", error)
       if (error.message.includes("Invalid login credentials")) {
         throw new Error("Invalid email or password. Please check your credentials and try again.")
       } else if (error.message.includes("Email not confirmed")) {
@@ -173,6 +180,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const isAuthenticated = !!user
   const isAdmin = user?.role === "admin"
+
+  if (initError) {
+    console.error("[v0] AuthProvider initialization error:", initError)
+  }
 
   return (
     <AuthContext.Provider
