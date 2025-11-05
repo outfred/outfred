@@ -13,7 +13,7 @@
   },
   "dependencies": {
     "@emotion/is-prop-valid": "latest",
-    "@hookform/resolvers": "^3.3.4",
+    "@hookform/resolvers": "3.3.4",
     "@radix-ui/react-accordion": "latest",
     "@radix-ui/react-alert-dialog": "latest",
     "@radix-ui/react-aspect-ratio": "latest",
@@ -37,14 +37,14 @@
     "@radix-ui/react-slot": "latest",
     "@radix-ui/react-switch": "latest",
     "@radix-ui/react-tabs": "latest",
-    "@radix-ui/react-toast": "^1.1.5",
+    "@radix-ui/react-toast": "1.1.5",
     "@radix-ui/react-toggle": "latest",
     "@radix-ui/react-toggle-group": "latest",
     "@radix-ui/react-tooltip": "latest",
     "@supabase/ssr": "latest",
     "@supabase/supabase-js": "latest",
-    "@tailwindcss/postcss": "^4.1.16",
-    "@types/node": "^24.10.0",
+    "@tailwindcss/postcss": "^4.1.9",
+    "@types/node": "24.10.0",
     "@vercel/analytics": "latest",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
@@ -65,7 +65,7 @@
     "npm:hono": "latest",
     "openai": "latest",
     "path": "latest",
-    "react": "^18.3.1",
+    "react": "18.3.1",
     "react-day-picker": "latest",
     "react-dom": "latest",
     "react-hook-form": "latest",
@@ -84,17 +84,18 @@
     "vaul": "latest",
     "ws": "latest",
     "yaml": "latest",
-    "zod": "^3.22.4"
+    "zod": "3.22.4"
   },
   "devDependencies": {
     "@types/node": "^22",
-    "@types/react": "^18.3.1",
-    "@types/react-dom": "^18.3.0",
-    "@vitejs/plugin-react": "^4.2.1",
-    "autoprefixer": "^10.4.18",
+    "@types/nodemailer": "6.4.16",
+    "@types/react": "18.3.1",
+    "@types/react-dom": "18.3.0",
+    "@vitejs/plugin-react": "4.2.1",
+    "autoprefixer": "10.4.18",
     "postcss": "^8.5",
-    "tailwindcss": "^4.0.0",
+    "tailwindcss": "^4.1.9",
     "typescript": "^5",
-    "vite": "^5.1.6"
+    "vite": "5.1.6"
   }
 }
