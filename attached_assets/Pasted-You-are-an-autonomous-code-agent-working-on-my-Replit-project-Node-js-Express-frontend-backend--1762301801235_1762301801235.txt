@@ -1,0 +1,147 @@
+You are an autonomous code agent working on my Replit project (Node.js + Express frontend/backend).
+Act as a senior full-stack engineer. Make decisions without asking me follow-ups unless absolutely required.
+
+GOAL
+Migrate and standardize all AI features (text search, image search, image generation, spellcheck) to a single Node.js Express implementation that runs reliably on Replit. Replace any old AI code paths (OpenAI image gen, outdated search endpoints, Supabase/Deno functions, etc.) with the new backend below. Keep existing UI/UX intact, but switch it to the new endpoints.
+
+NON-NEGOTIABLES
+- Do NOT break or remove existing non-AI routes. Only replace legacy AI routes with compatible ones.
+- Keep the same base URL structure if the frontend expects it. If there are old paths like /api/generate or /api/outfit/ai, preserve them as thin proxies to the new endpoints so nothing breaks.
+- Make atomic, clean commits with clear messages.
+- Add minimal tests + debug logs. Add a /api/debug/tests endpoint to verify everything.
+- If any package is incompatible on Replit, use web/native or a tiny custom implementation (no heavy native builds).
+- Use environment variables. Do NOT hardcode secrets.
+
+ENVIRONMENT
+- Create these env vars in Replit Secrets:
+  HF_TOKEN = <Hugging Face Inference API token>
+  PORT = 5000 (or use Replit default)
+- If the project has .env support, keep .env.example updated.
+
+WHAT TO BUILD (REPLACE ANY PREVIOUS AI IMPLEMENTATION)
+1) /api/search/text  (POST)
+   Body: { query: string, language: 'ar'|'en', filters?: { category?, priceRange?, colors? }, limit?: number }
+   Response: { results: Product[], correctedQuery?: string, suggestions?: string[], debug: { originalQuery, normalizedQuery, matchScores: { [id]: number }, executionTime } }
+
+   Implementation details:
+   - Fuzzy search with mini BM25-like scoring over product text fields.
+   - Arabic support: normalize (remove diacritics/tatweel, ة→ه, ى→ي, أ/إ/آ→ا, …), transliteration synonyms (e.g., "هودي" = hoodie/sweatshirt), simple keyboard-neighbor variants, Levenshtein <= 2 suggestions.
+   - Keep a lightweight in-memory index first; allow easy swap to Postgres later.
+   - Filters (category/colors/price) must be respected.
+   - Return correctedQuery if you fixed typos.
+
+2) /api/search/image  (POST)
+   Body: { imageUrl: string, limit?: number }
+   Response: { results: Product[], detectedColors?: string[], detectedCategories?: string[], debug: { clipEmbedding: number[], similarityScores: { [id]: number }, executionTime } }
+
+   Implementation details:
+   - Use HuggingFace Inference API (model: openai/clip-vit-base-patch32) to get embeddings for imageUrl.
+   - Compute cosine similarity vs stored product embeddings (512-dim). If products don’t have embeddings, lazily compute & cache them (KV / in-memory map).
+   - Simple detectors for color/category can be heuristics for now.
+   - If HF API throttles, handle gracefully and return a degraded result (no crash).
+
+3) /api/spellcheck  (POST)
+   Body: { text: string, language: 'ar'|'en' }
+   Response: { corrected: string, suggestions: string[], confidence: number, debug: { detectedErrors: Array<{word, position, suggestions}>, appliedRules: string[] } }
+
+   Implementation details:
+   - Normalize Arabic, suggest common typos, keyboard neighbor variants, and Levenshtein neighbors.
+   - Keep it fast. No large external dicts required now.
+
+4) /api/generate-image  (POST)
+   Body: { prompt: string, style?: 'realistic'|'artistic'|'sketch', size?: '512x512'|'768x768' }
+   Response: { imageUrl: string (data URL or hosted path), prompt: string, debug: { model: string, generationTime: number, seed: number } }
+
+   Implementation details:
+   - Replace ANY old image-generation path (OpenAI, etc.) with HuggingFace SD 2.1:
+     model: stabilityai/stable-diffusion-2-1
+   - Use HF Inference API. Return a data URL for simplicity (acceptable on Replit).
+   - Add prompt suffix tuned for fashion product photography (studio lighting).
+
+5) /api/debug/tests  (GET)
+   Response:
+   {
+     tests: {
+       textSearch: { status, sample, time },
+       imageSearch: { status, sample, time },
+       spellcheck: { status, sample, time },
+       imageGeneration: { status, sample, time }
+     },
+     systemInfo: {
+       productCount: number,
+       indexedProducts: number
+     }
+   }
+
+   Implementation details:
+   - Make quick calls to the above endpoints or internal functions with safe samples.
+   - Never crash; return "skipped" if HF is not available.
+
+BACKEND FILE LAYOUT (Node + Express on Replit)
+- server/
+  - index.js                    (Express app + routes)
+  - ai/
+    - searchText.js
+    - searchImage.js
+    - spellcheck.js
+    - generateImage.js
+  - utils/
+    - arabic.js                 (normalize, synonyms, keyboard variants, tiny typo map, tokenize)
+    - bm25.js                   (simple BM25-like scoring)
+    - hf.js                     (HuggingFace fetch wrappers: clipEmbedding(url), generateSD(prompt, opts))
+    - kv.js                     (in-memory cache; easy swap with DB later)
+- client/ (if exists)
+  - utils/aiSearchEngine.ts     (fetch wrappers)
+  - pages/Home.(tsx|jsx)        (switch to new endpoints without breaking UI)
+
+MIGRATION RULES (VERY IMPORTANT)
+- Find and REPLACE any old AI search or image generation logic:
+  - Deno/Supabase Edge functions → REMOVE or convert to Express routes.
+  - Old /api/generate or /api/outfit/ai → keep endpoint but proxy to /api/generate-image or /api/search/text internally so frontend doesn’t break.
+  - Any OpenAI image gen → route it to HuggingFace SD 2.1.
+- Keep non-AI APIs unchanged.
+
+FRONTEND HOOKUP
+- Create client/utils/aiSearchEngine.ts with:
+  searchText(query, opts), searchImage(imageUrl), spellcheck(text, lang), generateImage(prompt, opts), runTests()
+- In pages/Home.(tsx|jsx), before sending a text search, call spellcheck to preview corrected query (non-blocking).
+- If there’s an existing productsApi.search(), wrap or replace it behind the same function signature so UI is intact.
+
+ACCEPTANCE CRITERIA
+- POST /api/search/text with { "query":"هودي اسود","language":"ar" } returns hoodie-like results and possibly correctedQuery.
+- POST /api/search/image with a hoodie-like image URL returns ranked results and debug.similarityScores with non-zero values.
+- POST /api/spellcheck returns suggestions and confidence.
+- POST /api/generate-image creates an image data URL (png) without throwing.
+- GET /api/debug/tests returns status: "ok" (or "skipped" for imageSearch if HF is unavailable) and does not crash.
+- Existing non-AI routes keep working. If there were 404/400 on old AI routes, they are now satisfied by proxying to the new endpoints.
+
+LOGGING & TESTS
+- Log each AI route with timing and a short summary (query length, #results, etc.).
+- Add minimal integration tests or a simple script in package.json:
+  "test:ai": "node scripts/smoke-ai.js"
+  The script should curl or fetch the 4 endpoints and print a short summary.
+
+RUN & VERIFY (automate these in a post-setup script if possible)
+- npm install required deps (node-fetch or native fetch, express, any lightweight utils).
+- Start server and run smoke tests:
+  curl -s -X POST http://localhost:5000/api/search/text \
+    -H "content-type: application/json" \
+    -d '{"query":"هودي","language":"ar"}'
+  curl -s http://localhost:5000/api/debug/tests
+
+PERFORMANCE & FALLBACKS
+- Text search should be <100ms for ~1k products.
+- Image search latency mainly HF; cache embeddings in memory (kv.js) keyed by imageUrl/productId.
+- If HF returns an error or rate-limits, respond 200 with degraded info and a debug flag.
+
+DELIVERABLES
+- Working Express endpoints above.
+- Updated frontend wrapper using them.
+- Backwards-compatible proxies for any old AI routes.
+- Clear README section (AI Setup) with env vars and testing instructions.
+- Open a PR (or just push) with concise commits:
+  feat(ai): add unified AI endpoints (text/image/spell/generate)
+  refactor(ai): proxy legacy routes to new endpoints
+  chore(ai): add debug tests and docs
+
+Execute now.

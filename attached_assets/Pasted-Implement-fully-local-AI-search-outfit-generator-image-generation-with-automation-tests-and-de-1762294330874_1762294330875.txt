@@ -1,0 +1,222 @@
+Implement fully-local AI search + outfit generator + image generation with automation, tests, and debug tooling
+
+📨 المحتوى (Arabic spec)
+
+مرحبًا،
+أريد تحويل المشروع ليعمل محليًا بالكامل بدون أي مزوّدات خارجية، بحيث كل مميزات البحث الذكي (نص + صورة) ومولّد الأوتفيت وتوليد الصور تعمل من الخادم/السيرفر الخاص بالموقع فقط. رجاء تنفيذ التالي حرفيًا:
+
+1) المتطلبات العامة (Local-only)
+
+ممنوع استدعاء أي API خارجي (لا OpenAI ولا Groq ولا Qdrant Cloud ولا Stable-Diffusion SaaS).
+
+كل الموديلات تُحمَّل محليًا مرة واحدة، ويُتاح تشغيلها دون إنترنت بعد التحميل.
+
+ضع كل الإعدادات في .env، واجعل هناك مفتاح DEBUG=1 يفعّل لوج تفصيلي.
+
+2) المكوّنات (Services) والمنافذ
+
+Ollama (LLM للأوتفيت/التفسير) على :11434 مع موديل افتراضي llama3.1:8b (والبديل qwen2.5:7b).
+
+Qdrant (Vector DB محلي) على :6333 مع Collection اسمها products.
+
+Text Embeddings (بايثون FastAPI، موديل BAAI/bge-m3) على :7001.
+
+Image Embeddings (بايثون FastAPI، OpenCLIP ViT-B/32) على :7002.
+
+Reranker (بايثون FastAPI، BAAI/bge-reranker-v2-m3) على :7003.
+
+API Gateway (Node/Express) على :5000 يعرّف كل الـ endpoints للموقع.
+
+ملاحظة: شغّل Ollama محليًا خارج الـ compose افتراضيًا، ووفّر سطر تعليق يشرح كيف نضيفه للـ compose لاحقًا.
+
+3) ملف docker-compose
+
+قدّم docker-compose.yml يشغّل: qdrant, text-emb, img-emb, reranker, search-api.
+أمثلة ENV (ضعها في .env ومرّرها للخدمات):
+
+QDRANT_URL=http://qdrant:6333
+TEXT_EMB_URL=http://text-emb:7001/embed
+IMG_EMB_URL=http://img-emb:7002/embed
+RERANK_URL=http://reranker:7003/rerank
+OLLAMA_URL=http://host.docker.internal:11434
+DEBUG=1
+
+4) الـ API المطلوب (من الموقع نفسه)
+4.1) POST /api/search
+
+Body:
+
+{ "query": "string?", "imageBase64": "data:image/png;base64,...?", "topK": 24 }
+
+
+المنطق:
+
+Normalize للـ query (قاموس عربي↔إنجليزي + تصحيح إملائي بسيط “هودي⇄hoodie”).
+
+لو صورة: احسب image embedding من خدمة img-emb؛ وإلّا text embedding من text-emb.
+
+ابحث في Qdrant (collection: products, with_payload=true, limit=topK).
+
+لو فيه query نصي: أعد ترتيب النتائج عبر reranker.
+
+ارجع النتائج (id, score, payload {...}).
+
+Logs عند DEBUG=1: أزمنة كل خطوة (ms)، حجم/أبعاد الـ vectors، عدد النتائج قبل/بعد rerank، request-id.
+
+4.2) POST /api/outfit/generate
+
+Body:
+
+{ "gender":"unisex|male|female", "season":"all|summer|winter|...", "vibe":"casual|street|...", "budget":"low|mid|high", "picks":[{"id":"...","title":"...","price":123}] }
+
+
+المنطق:
+
+أرسل Prompt مُهيكل إلى Ollama (model llama3.1:8b) ليرجع JSON بالصيغة:
+
+{
+  "items": [{"id": "or null", "title": "...", "why": "..."}],
+  "total_estimate": 0,
+  "style_notes": "نص عربي موجز"
+}
+
+
+أي إخراج غير JSON نقي: حاول إصلاحه (parse/repair). لو فشل → 500 برسالة واضحة.
+
+4.3) POST /api/image/generate
+
+محلي بالكامل عبر Stable Diffusion محلي:
+
+جهّز خيارين (switch بالبيئة):
+
+ComfyUI محلي (افتراضيًا http://localhost:8188) مع ورشة/graph جاهز لاستقبال Prompt وإرجاع صورة Base64.
+
+أو FastAPI بداخل المشروع بـ diffusers (SD 1.5/SDXL/SD-Turbo) يعرّف:
+Body: { "prompt":"...", "width":512, "height":512, "seed": null, "steps": 20 }
+Response: { "imageBase64": "data:image/png;base64,..." }
+
+ممنوع استدعاء أي مولد صور خارجي.
+
+5) فهرسة البيانات (Indexer) + Webhook
+
+سكربت Indexer (Node أو Python):
+
+يقرأ قائمة المنتجات (JSON/DB)، يكوّن نصًا (title + desc + tags + brand + color …)،
+
+يستدعي text-emb و/أو img-emb ثم upsert نقاط في Qdrant (id, vector, payload).
+
+Webhook/Admin: عند إضافة/تعديل/حذف منتج → إدخال Job لQueue صغيرة (مثلا BullMQ/Redis أو in-memory fallback) لتحديث الفهرس تدريجيًا.
+
+يدعم re-embed انتقائي للِّي اتبدّل فقط (hash للمحتوى لتقليل التكلفة).
+
+6) القاموس العربي↔الإنجليزي + تصحيح الإملاء
+
+ملف JSON محلي بالمصطلحات (hoodie/هودي، جاكيت، تي-شيرت، أوفرسايز، ربع-سستة… إلخ)
+
+استخدم rapidfuzz أو SymSpell محلي للفَزّي ماتش.
+
+أي استعلام بدون نتائج → يُسجّل في لوج misses.log لمراجعة أسبوعية.
+
+7) الاختبارات (مطلوبة) + CI
+7.1) Node (Jest + Supertest) في api/__tests__
+
+search.spec.ts:
+
+عربي→إنجليزي: “هودي” تُرجع نتائج ذات صلة (payload.title/brand).
+
+صورة Base64 صغيرة → يحصل vector ويرجع نتائج.
+
+عدم وجود query وَ image → 400.
+
+outfit.spec.ts:
+
+يرجع JSON صحيح بالمفاتيح المذكورة.
+
+يتحمّل مدخلات ناقصة (defaults).
+
+image.spec.ts:
+
+يولّد صورة Base64 صحيحة بإعدادات بسيطة (لو ComfyUI غير متاح، اختبر مسار diffusers).
+
+npm scripts:
+
+"dev": "nodemon server.js",
+"test": "jest --runInBand",
+"lint": "eslint ."
+
+7.2) Python (pytest) لكل خدمة
+
+text-emb: طول/أبعاد ثابتة + normalized.
+
+img-emb: يقبل PNG صغيرة ويُرجع vector normalized.
+
+reranker: ترتيب مختلف عند تغيير query.
+
+7.3) CI
+
+ملف GitHub Actions /.github/workflows/ci.yml يشغل:
+
+build + lint + tests (Node و Python)
+
+يمنع الدمج على main لو أي فشل.
+
+8) الـ Debug & Observability
+
+Request-ID فريد بكل طلب، ينتقل بين الخدمات.
+
+واجهة /api/health تُرجع JSON counters:
+
+latency المتوسط لكل خطوة، عدد الاستدعاءات، نسبة zero-results، آخر snapshot Qdrant…
+
+عند DEBUG=1:
+
+اطبع زمن كل خطوة (embedding/search/rerank/ollama/image) بالمللي ثانية.
+
+قصّ Base64 الطويلة في اللوج.
+
+9) جوبز مجدولة (Cron) محلية
+
+ليليًا:
+
+Re-embed للمنتجات التي تغيّرت فقط (وفق hash).
+
+Snapshot/compact لـ Qdrant (حفظ في مجلد ./backups/qdrant/).
+
+أسبوعيًا:
+
+تقييم جودة البحث على Benchmark صغير (NDCG/Recall@K) من queries حقيقية + تقرير HTML/CSV.
+
+قراءة misses.log واقتراح تحديثات للقاموس (ملف synonyms.pending.json)، وتوفير سكربت “apply” لتحديث القاموس يدويًا.
+
+10) معايير القبول (Acceptance)
+
+docker compose up يُطلق كل الخدمات بلا أخطاء.
+
+npm test (Node) وpytest (Python) يمران بنجاح.
+
+POST /api/search بكلمة "هودي" يُرجع نتائج، مع لوج للأزمنة وعدد النتائج قبل/بعد rerank.
+
+POST /api/outfit/generate يُرجع JSON عربي موجز بصيغة صحيحة.
+
+POST /api/image/generate يولّد صورة Base64 محليًا (ComfyUI أو diffusers).
+
+كود نظيف + تعليقات قصيرة أعلى الملفات تشرح كل خدمة.
+
+11) التسليم
+
+ادفعوا التغييرات على فرع: feat/local-ai-engine
+
+افتحوا PR مع شرح: البنية، الأوامر، كيفيّة التشغيل محليًا، ولقطات من الـ logs والاختبارات.
+
+تأكيد نهائي: كل ما سبق محلي بالكامل — لا تستعملوا أي API خارجي إطلاقًا.
+
+(اختياري) English short copy
+
+Please refactor the project to run fully on local components (no external APIs) for:
+
+Smart Search (text+image) → bge-m3, OpenCLIP, Qdrant, local reranker
+
+Outfit Generator → Ollama (llama3.1:8b)
+
+Image Generation → local ComfyUI or diffusers (SD1.5/SDXL)
+Include docker-compose, indexer, webhook/queue, Jest+pytest tests, CI workflow, debug logs, cron jobs, and clear acceptance criteria as specified above. Deliver via PR feat/local-ai-engine.
