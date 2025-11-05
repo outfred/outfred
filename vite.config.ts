@@ -1,33 +1,39 @@
-import { defineConfig } from 'vite';
-import react from '@vitejs/plugin-react';
-import path from 'path';
+import { defineConfig } from "vite"
+import react from "@vitejs/plugin-react"
+import path from "path"
 
 // https://vitejs.dev/config/
 export default defineConfig({
   plugins: [react()],
   define: {
-    'import.meta.env.AI_INTEGRATIONS_OPENAI_BASE_URL': JSON.stringify(process.env.AI_INTEGRATIONS_OPENAI_BASE_URL),
-    'import.meta.env.AI_INTEGRATIONS_OPENAI_API_KEY': JSON.stringify(process.env.AI_INTEGRATIONS_OPENAI_API_KEY),
+    "import.meta.env.VITE_SUPABASE_URL": JSON.stringify(
+      process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL,
+    ),
+    "import.meta.env.VITE_SUPABASE_ANON_KEY": JSON.stringify(
+      process.env.SUPABASE_ANON_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
+    ),
+    "import.meta.env.AI_INTEGRATIONS_OPENAI_BASE_URL": JSON.stringify(process.env.AI_INTEGRATIONS_OPENAI_BASE_URL),
+    "import.meta.env.AI_INTEGRATIONS_OPENAI_API_KEY": JSON.stringify(process.env.AI_INTEGRATIONS_OPENAI_API_KEY),
   },
   resolve: {
     alias: {
-      '@': path.resolve(__dirname, './'),
+      "@": path.resolve(__dirname, "./"),
     },
   },
   build: {
-    outDir: 'dist',
+    outDir: "dist",
     sourcemap: false,
     rollupOptions: {
       output: {
         manualChunks: {
-          'react-vendor': ['react', 'react-dom'],
-          'ui-vendor': ['@radix-ui/react-dialog', '@radix-ui/react-dropdown-menu'],
+          "react-vendor": ["react", "react-dom"],
+          "ui-vendor": ["@radix-ui/react-dialog", "@radix-ui/react-dropdown-menu"],
         },
       },
     },
   },
   server: {
-    host: '0.0.0.0',
+    host: "0.0.0.0",
     port: 5000,
     strictPort: true,
     allowedHosts: true,
@@ -35,18 +41,12 @@ export default defineConfig({
       clientPort: 5000,
     },
     watch: {
-      ignored: [
-        '**/.local/**',
-        '**/.cache/**',
-        '**/.replit',
-        '**/replit.nix',
-        '**/node_modules/**',
-      ],
+      ignored: ["**/.local/**", "**/.cache/**", "**/.replit", "**/replit.nix", "**/node_modules/**"],
     },
   },
   preview: {
-    host: '0.0.0.0',
+    host: "0.0.0.0",
     port: 5000,
     strictPort: true,
   },
-});
+})

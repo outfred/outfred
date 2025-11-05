@@ -2,58 +2,45 @@ import { createBrowserClient } from "@supabase/ssr"
 
 let supabaseClient: ReturnType<typeof createBrowserClient> | null = null
 
-function getEnvVar(name: string): string {
-  // Try Vite env vars first (import.meta.env)
-  if (typeof import.meta !== "undefined" && import.meta.env) {
-    const viteVar = import.meta.env[`VITE_${name}`] || import.meta.env[`VITE_PUBLIC_${name}`]
-    if (viteVar) return viteVar
-  }
-
-  // Try Next.js env vars (process.env)
-  if (typeof process !== "undefined" && process.env) {
-    const nextVar = process.env[`NEXT_PUBLIC_${name}`]
-    if (nextVar) return nextVar
-  }
-
-  // Try window._env_ for runtime injection
-  if (typeof window !== "undefined" && (window as any)._env_) {
-    const windowVar = (window as any)._env_[name]
-    if (windowVar) return windowVar
-  }
-
-  return ""
-}
-
 export function createClient() {
   if (supabaseClient) {
     return supabaseClient
   }
 
-  const supabaseUrl = getEnvVar("SUPABASE_URL")
-  const supabaseAnonKey = getEnvVar("SUPABASE_ANON_KEY")
+  const supabaseUrl = import.meta.env.VITE_SUPABASE_URL
+  const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY
+
+  console.log("[v0] Supabase config check:", {
+    hasUrl: !!supabaseUrl,
+    hasKey: !!supabaseAnonKey,
+    url: supabaseUrl ? `${supabaseUrl.substring(0, 20)}...` : "missing",
+  })
 
   if (!supabaseUrl || !supabaseAnonKey) {
     console.error("❌ Supabase configuration missing!")
     console.error("Required environment variables:")
-    console.error("- NEXT_PUBLIC_SUPABASE_URL or VITE_SUPABASE_URL")
-    console.error("- NEXT_PUBLIC_SUPABASE_ANON_KEY or VITE_SUPABASE_ANON_KEY")
-    console.error("Current values:", { supabaseUrl, supabaseAnonKey })
+    console.error("- SUPABASE_URL or NEXT_PUBLIC_SUPABASE_URL (in Vercel)")
+    console.error("- SUPABASE_ANON_KEY or NEXT_PUBLIC_SUPABASE_ANON_KEY (in Vercel)")
+    console.error("These are automatically mapped to VITE_* variables in vite.config.ts")
 
-    // Return a mock client to prevent crashes
     return {
       auth: {
         getSession: async () => ({ data: { session: null }, error: null }),
         signInWithPassword: async () => ({
           data: { user: null, session: null },
-          error: { message: "Supabase not configured" },
+          error: { message: "Supabase not configured. Please add environment variables." },
         }),
-        signUp: async () => ({ data: { user: null, session: null }, error: { message: "Supabase not configured" } }),
+        signUp: async () => ({
+          data: { user: null, session: null },
+          error: { message: "Supabase not configured. Please add environment variables." },
+        }),
         signOut: async () => ({ error: null }),
         onAuthStateChange: () => ({ data: { subscription: { unsubscribe: () => {} } } }),
       },
     } as any
   }
 
+  console.log("✅ Creating Supabase client with valid credentials")
   supabaseClient = createBrowserClient(supabaseUrl, supabaseAnonKey)
 
   return supabaseClient
